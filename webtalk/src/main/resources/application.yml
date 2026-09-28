@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: webtalk
+
+  # 개발 단계는 H2로 즉시 실행하고, 필요하면 같은 엔티티 구조로 MySQL로 전환한다 (보고서 5.1).
+  datasource:
+    url: jdbc:h2:file:./data/webtalk;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+  jpa:
+    hibernate:
+      ddl-auto: none # 스키마는 schema.sql(부록 A)로 직접 관리한다.
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+logging:
+  level:
+    com.example.webtalk: info

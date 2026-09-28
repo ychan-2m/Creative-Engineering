@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>WebTalk</title>
+  <script>
+    // 로그인 상태를 확인해 대화 목록 또는 로그인 화면으로 보낸다.
+    fetch('/api/me', { credentials: 'same-origin' })
+      .then((res) => { location.replace(res.ok ? '/chat.html' : '/login.html'); })
+      .catch(() => { location.replace('/login.html'); });
+  </script>
+</head>
+<body></body>
+</html>
