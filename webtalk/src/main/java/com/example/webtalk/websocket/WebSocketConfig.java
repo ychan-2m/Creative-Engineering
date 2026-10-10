@@ -29,8 +29,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("http://localhost:8080", "http://127.0.0.1:8080");
+        // 기본 동일 출처 검사: 접속한 서버의 도메인/IP와 같은 Origin만 허용한다.
+        registry.addEndpoint("/ws");
     }
 
     @Override

@@ -5,6 +5,9 @@ import com.example.webtalk.chat.dto.ChatRoomDirectRequest;
 import com.example.webtalk.chat.dto.ChatRoomListItemResponse;
 import com.example.webtalk.chat.dto.ChatRoomResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +30,15 @@ public class ChatRoomController {
     public ChatRoomResponse getOrCreateDirect(@Valid @RequestBody ChatRoomDirectRequest request,
                                                @AuthenticationPrincipal WebtalkUserPrincipal principal) {
         return chatRoomService.getOrCreateDirectRoom(principal.getUsername(), request.targetUserId());
+    }
+
+    public record ReadRequest(@NotNull @Positive Long messageId) {}
+
+    @PostMapping("/{roomId}/read")
+    public ResponseEntity<Void> read(@PathVariable Long roomId, @Valid @RequestBody ReadRequest request,
+                                    @AuthenticationPrincipal WebtalkUserPrincipal principal) {
+        chatRoomService.markRead(principal.getUsername(), roomId, request.messageId());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping

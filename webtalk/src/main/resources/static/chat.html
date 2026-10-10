@@ -11,6 +11,7 @@
     <span class="brand">WebTalk</span>
     <div>
       <span id="currentUserLabel" class="current-user"></span>
+      <button id="styleButton" class="logout-button" type="button">내 말투 설정</button>
       <button id="logoutButton" class="logout-button" type="button">로그아웃</button>
     </div>
   </header>
@@ -43,6 +44,18 @@
 
         <div id="messageList" class="message-list" aria-live="polite"></div>
 
+        <div class="reply-assist">
+          <div id="replyTarget" class="reply-target" hidden>
+            <span>이 메시지에 답장: <strong id="replyTargetText"></strong></span>
+            <button id="clearReplyTarget" type="button">선택 해제</button>
+          </div>
+          <label for="replyRelationship">상대방과의 관계</label>
+          <select id="replyRelationship"><option>친한 친구</option><option>어른</option><option>선배·동료</option><option>후배</option><option>처음 만난 사람</option></select>
+          <button id="suggestButton" type="button">내 말투로 답장 추천</button>
+          <span id="suggestStatus" role="status"></span>
+          <div id="suggestions" class="suggestions"></div>
+          <small>상대방 말풍선을 누르면 해당 메시지의 답장을 추천합니다. 선택 후 직접 전송하세요.</small>
+        </div>
         <div class="composer">
           <label for="messageInput" class="visually-hidden">메시지 입력</label>
           <textarea id="messageInput" rows="1" maxlength="500" placeholder="메시지를 입력하세요"></textarea>
@@ -53,9 +66,30 @@
     </section>
   </div>
 
+  <dialog id="styleDialog">
+    <form id="styleForm">
+      <h2>내 말투 설정</h2>
+      <p>관계마다 선택형 6개 · 상황별 답변 6개 · 고쳐 쓰기 3개를 각각 저장하세요.</p>
+      <label for="styleRelationship">질문지 관계</label>
+      <select id="styleRelationship"><option>친한 친구</option><option>어른</option><option>선배·동료</option><option>후배</option><option>처음 만난 사람</option></select>
+      <fieldset><legend>1. 평소 말투 선택</legend><div id="stylePreferences"></div></fieldset>
+      <fieldset><legend>2. 상황별 실제 답장</legend><div id="styleQuestions"></div></fieldset>
+      <fieldset><legend>3. 내 말투로 고쳐 쓰기</legend><p>뜻은 유지하고 평소 표현으로 바꿔 주세요.</p><div id="styleRewrites"></div></fieldset>
+      <label for="styleAvoided">피하고 싶은 표현 (선택, 쉼표로 구분)</label>
+      <textarea id="styleAvoided" maxlength="300" rows="2" placeholder="예: 웅, 헤헤"></textarea>
+      <p class="style-note">답변은 계정에 저장되며 추천 시 선택한 메시지와 그 이전 대화 최대 10개(미선택 시 최근 10개), 입력 중인 문장과 함께 서버에 설정된 AI로 전달됩니다. 기본 설정은 로컬 Ollama입니다. 저장만으로 모델을 학습시키지는 않습니다.</p>
+      <p id="styleStatus" role="status"></p>
+      <div class="style-actions">
+        <button type="submit">저장</button>
+        <button id="deleteStyleButton" type="button">이 관계의 말투 삭제</button>
+        <button id="closeStyleButton" type="button">닫기</button>
+      </div>
+    </form>
+  </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/socket.js"></script>
+  <script src="/js/reply-assist.js"></script>
   <script src="/js/chat.js"></script>
 </body>
 </html>

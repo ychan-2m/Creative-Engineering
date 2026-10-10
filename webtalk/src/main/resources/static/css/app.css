@@ -469,3 +469,29 @@ a {
   margin-right: 8px;
   cursor: pointer;
 }
+
+/* 말투 질문지와 사용자가 선택하는 답장 후보 */
+.reply-assist { padding: 10px 16px; border-top: 1px solid #e5e7eb; background: #f8fafc; }
+.reply-assist small { display: block; color: #526075; margin-top: 6px; }
+#suggestStatus { font-size: 0.85rem; color: #526075; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.suggestions button { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 14px; padding: 8px 12px; }
+#styleDialog { border: 0; border-radius: 16px; padding: 24px; width: min(560px, 90vw); max-height: 85vh; overflow: auto; }
+#styleDialog::backdrop { background: #18233880; }
+#styleDialog label { display: block; margin-top: 14px; margin-bottom: 6px; }
+#styleDialog textarea, #styleDialog select { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; }
+.style-note { color: #526075; font-size: 0.85rem; line-height: 1.6; }
+.style-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#styleDialog fieldset { border: 1px solid #dbe2eb; border-radius: 10px; margin-top: 18px; padding: 14px; }
+#styleDialog legend { font-weight: 600; padding: 0 6px; }
+.replyable { cursor: pointer; }
+.replyable:focus-visible .bubble, .reply-selected .bubble { outline: 3px solid #4f74df; outline-offset: 3px; }
+.reply-target { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px; margin-bottom: 8px; border-left: 3px solid #4f74df; background: #edf2ff; }
+.reply-target[hidden] { display: none; }
+.reply-target span { min-width: 0; overflow-wrap: anywhere; }
+.reply-target strong { display: block; max-height: 4em; overflow: auto; white-space: pre-wrap; }
+.reply-target button { flex-shrink: 0; }
+
+#chatRoomView[hidden] { display: none !important; }
+.reply-assist select { max-width: 100%; margin: 4px 8px 4px 0; }

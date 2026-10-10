@@ -2,6 +2,7 @@ package com.example.webtalk.chat;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -12,6 +13,15 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
     List<ChatRoomMember> findByIdUserIdOrderByJoinedAtDesc(Long userId);
 
     List<ChatRoomMember> findByIdChatRoomId(Long chatRoomId);
+
+    @Modifying
+    @Query("""
+            UPDATE ChatRoomMember m SET m.lastReadMessageId = :messageId
+            WHERE m.id.chatRoomId = :roomId AND m.id.userId = :userId
+            AND (m.lastReadMessageId IS NULL OR m.lastReadMessageId < :messageId)
+            """)
+    int advanceRead(@Param("roomId") Long roomId, @Param("userId") Long userId,
+                    @Param("messageId") Long messageId);
 
     // 두 사용자가 이미 함께 있는 1대1 방을 찾는다 (E05: 있으면 새로 만들지 않고 기존 방을 반환).
     @Query("""

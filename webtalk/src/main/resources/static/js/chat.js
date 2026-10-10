@@ -4,6 +4,9 @@
 
   let currentUser = null;       // { userId, loginId, nickname }
   let currentRoom = null;       // { roomId, peer: { userId, nickname } }
+  let lastDisplayedMessageId = 0, historyLoading = false, reading = false, refreshing = false;
+  let roomListRevision = 0;
+  const acknowledgedReads = new Map();
   let latestConnectionStatus = 'connecting';
   const pendingTimers = new Map(); // clientMessageId -> timeout handle
 
@@ -38,7 +41,14 @@
     }
     currentUserLabel.textContent = `${currentUser.nickname} (${currentUser.loginId})`;
 
+    WebTalkReplyAssist.setUser(currentUser.userId);
     await loadRoomList();
+    setInterval(() => {
+      if (!document.hidden) {
+        loadRoomList().catch(console.error);
+        markDisplayedRead().catch(console.error);
+      }
+    }, 3000);
 
     WebTalkSocket.connect({
       onStatusChange: handleConnectionStatusChange,
@@ -95,7 +105,9 @@
 
   // ---------- 대화 목록 (FR05 목록 조회) ----------
   async function loadRoomList() {
+    const requested = ++roomListRevision;
     const rooms = await WebTalkApi.get('/api/chat-rooms');
+    if (requested !== roomListRevision) return;
     roomListEl.innerHTML = '';
 
     if (rooms.length === 0) {
@@ -146,6 +158,9 @@
   // ---------- 채팅방 열기 (FR07 대화 기록 조회) ----------
   async function openRoom(roomId, peer) {
     currentRoom = { roomId, peer };
+    lastDisplayedMessageId = 0;
+    historyLoading = true;
+    WebTalkReplyAssist.setRoom(roomId);
     peerNameLabel.textContent = peer.nickname;
     messageListEl.innerHTML = '';
 
@@ -159,9 +174,13 @@
 
     try {
       const history = await WebTalkApi.get(`/api/chat-rooms/${roomId}/messages`);
-      history.forEach((message) => appendBubble(buildBubbleModel(message, 'sent')));
+      if (currentRoom?.roomId !== roomId) return;
+      history.forEach((message) => renderConfirmedMessage(message));
+      historyLoading = false;
       scrollMessagesToBottom();
+      await markDisplayedRead();
     } catch (err) {
+      if (currentRoom?.roomId === roomId) historyLoading = false;
       if (err.status === 403) {
         // E06: 권한 없는 방이면 목록으로 돌려보낸다.
         alert('이 대화방에 접근할 수 없습니다.');
@@ -173,18 +192,57 @@
 
   function closeRoom() {
     currentRoom = null;
+    WebTalkReplyAssist.setRoom(null);
     chatBody.classList.remove('room-open');
     chatPlaceholder.hidden = false;
     chatRoomView.hidden = true;
   }
 
   backButton.addEventListener('click', () => {
-    chatBody.classList.remove('room-open');
+    closeRoom();
+    loadRoomList().catch(console.error);
+  });
+
+  function renderConfirmedMessage(message) {
+    lastDisplayedMessageId = Math.max(lastDisplayedMessageId, message.messageId);
+    const row = findBubbleRow(message.clientMessageId);
+    if (row) setBubbleStatus(row, 'sent', message.createdAt);
+    else appendBubble(buildBubbleModel(message, 'sent'));
+  }
+
+  async function markDisplayedRead() {
+    if (!currentRoom || document.hidden || historyLoading || reading || !lastDisplayedMessageId) return;
+    const roomId = currentRoom.roomId, messageId = lastDisplayedMessageId;
+    if ((acknowledgedReads.get(roomId) || 0) >= messageId) return;
+    reading = true;
+    try {
+      await WebTalkApi.post(`/api/chat-rooms/${roomId}/read`, { messageId });
+      acknowledgedReads.set(roomId, messageId);
+      await loadRoomList();
+    } finally { reading = false; }
+  }
+
+  async function refreshHistory() {
+    if (!currentRoom || historyLoading || refreshing || document.hidden) return;
+    const roomId = currentRoom.roomId;
+    refreshing = true;
+    try {
+      const history = await WebTalkApi.get(`/api/chat-rooms/${roomId}/messages`);
+      if (currentRoom?.roomId !== roomId) return;
+      history.forEach(renderConfirmedMessage);
+      scrollMessagesToBottom();
+      await markDisplayedRead();
+    } finally { refreshing = false; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshHistory().catch(console.error);
   });
 
   // ---------- 메시지 렌더링 ----------
   function buildBubbleModel(message, status) {
     return {
+      messageId: message.messageId,
+      roomId: message.roomId,
       clientMessageId: message.clientMessageId,
       mine: message.senderId === currentUser.userId,
       content: message.content,
@@ -208,6 +266,23 @@
       row.dataset.clientId = model.clientMessageId;
     }
     row.dataset.content = model.content;
+    if (!model.mine && model.messageId) {
+      row.dataset.messageId = model.messageId;
+      row.classList.add('replyable');
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `이 메시지에 답장 추천: ${model.content}`);
+      row.setAttribute('aria-pressed', 'false');
+      row.title = '눌러서 이 메시지에 답장 추천';
+      const select = () => WebTalkReplyAssist.selectMessage(model);
+      row.addEventListener('click', select);
+      row.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          select();
+        }
+      });
+    }
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble state-' + model.status;
@@ -302,9 +377,11 @@
     scrollMessagesToBottom();
 
     messageInput.value = '';
+    messageInput.dispatchEvent(new Event('input'));
     messageInput.style.height = 'auto';
     updateSendButtonState();
 
+    WebTalkReplyAssist.clearTarget();
     dispatchSend(currentRoom.roomId, clientMessageId, content);
   }
 
@@ -340,6 +417,8 @@
       return;
     }
 
+    lastDisplayedMessageId = Math.max(lastDisplayedMessageId, message.messageId);
+    WebTalkReplyAssist.onIncomingMessage();
     const isMine = message.senderId === currentUser.userId;
     if (isMine) {
       const row = findBubbleRow(message.clientMessageId);
@@ -354,10 +433,11 @@
         appendBubble(buildBubbleModel(message, 'sent'));
       }
     } else {
-      appendBubble(buildBubbleModel(message, 'sent'));
+      if (!findBubbleRow(message.clientMessageId)) appendBubble(buildBubbleModel(message, 'sent'));
     }
     scrollMessagesToBottom();
     updateRoomListPreview(message.roomId, message.content);
+    markDisplayedRead().catch(console.error);
   }
 
   function updateRoomListPreview(roomId, content) {
@@ -372,6 +452,7 @@
   // ---------- 연결 상태 표시 (FR08, E07, 4.5 접근성) ----------
   function handleConnectionStatusChange(status, attempt, max) {
     latestConnectionStatus = status;
+    if (status === 'connected') refreshHistory().catch(console.error);
     applyConnectionStatusUI(status, attempt, max);
   }
 

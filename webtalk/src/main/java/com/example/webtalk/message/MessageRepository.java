@@ -16,7 +16,11 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     long countByChatRoomIdAndIdGreaterThan(Long chatRoomId, Long messageId);
 
+    List<Message> findByChatRoomIdAndIdLessThanEqualOrderByIdDesc(Long chatRoomId, Long id, Pageable pageable);
+
     long countByChatRoomId(Long chatRoomId);
+
+    long countByChatRoomIdAndSenderIdNotAndIdGreaterThan(Long chatRoomId, Long senderId, Long messageId);
 
     Optional<Message> findFirstByChatRoomIdOrderByCreatedAtDescIdDesc(Long chatRoomId);
 }

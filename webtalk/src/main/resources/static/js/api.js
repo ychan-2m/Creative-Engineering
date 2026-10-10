@@ -35,6 +35,7 @@ window.WebTalkApi = (() => {
 
   return {
     ApiError,
+    remove: (path) => request(path, { method: 'DELETE' }),
     get: (path) => request(path, { method: 'GET' }),
     post: (path, data) => request(path, { method: 'POST', body: JSON.stringify(data ?? {}) }),
   };

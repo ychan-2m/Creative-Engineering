@@ -38,3 +38,17 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_room_time
     ON messages(chat_room_id, created_at, id);
+
+-- 사용자별 답장 말투 예시. 기존 대화 테이블은 유지한다.
+CREATE TABLE IF NOT EXISTS reply_style_profiles (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id),
+    profile_json VARCHAR(12000) NOT NULL
+);
+
+-- 관계별 질문지를 별도로 보존한다. 이전 단일 프로필은 읽을 때 호환한다.
+CREATE TABLE IF NOT EXISTS reply_style_relationship_profiles (
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    relationship VARCHAR(40) NOT NULL,
+    profile_json VARCHAR(12000) NOT NULL,
+    PRIMARY KEY (user_id, relationship)
+);

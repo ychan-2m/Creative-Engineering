@@ -1,5 +1,13 @@
 server:
-  port: 8080
+  address: ${SERVER_ADDRESS:0.0.0.0}
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        same-site: lax
+        http-only: true
+        secure: ${WEBTALK_SECURE_COOKIE:false}
 
 spring:
   application:
@@ -27,9 +35,14 @@ spring:
 
   h2:
     console:
-      enabled: true
+      enabled: ${WEBTALK_H2_CONSOLE:false}
       path: /h2-console
 
 logging:
   level:
     com.example.webtalk: info
+
+webtalk:
+  ai:
+    url: ${WEBTALK_AI_URL:http://localhost:11434}
+    model: ${WEBTALK_AI_MODEL:gemma3:12b}

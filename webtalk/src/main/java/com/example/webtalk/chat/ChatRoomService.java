@@ -4,6 +4,7 @@ import com.example.webtalk.chat.dto.ChatRoomListItemResponse;
 import com.example.webtalk.chat.dto.ChatRoomResponse;
 import com.example.webtalk.chat.dto.PeerSummary;
 import com.example.webtalk.common.InvalidMessageException;
+import com.example.webtalk.common.ChatRoomForbiddenException;
 import com.example.webtalk.common.UserNotFoundException;
 import com.example.webtalk.message.Message;
 import com.example.webtalk.message.MessageRepository;
@@ -72,6 +73,17 @@ public class ChatRoomService {
                 .toList();
     }
 
+    @Transactional
+    public void markRead(String loginId, Long roomId, Long messageId) {
+        User self = userRepository.findByLoginId(loginId).orElseThrow(ChatRoomForbiddenException::new);
+        ChatRoomMemberId memberId = new ChatRoomMemberId(roomId, self.getId());
+        if (!chatRoomMemberRepository.existsById(memberId)) throw new ChatRoomForbiddenException();
+        Message message = messageRepository.findById(messageId)
+                .filter(m -> m.getChatRoomId().equals(roomId))
+                .orElseThrow(() -> new InvalidMessageException("이 대화방의 메시지만 읽음 처리할 수 있습니다."));
+        chatRoomMemberRepository.advanceRead(roomId, self.getId(), message.getId());
+    }
+
     private ChatRoomListItemResponse toListItem(User self, ChatRoomMember myMembership) {
         Long roomId = myMembership.getId().getChatRoomId();
 
@@ -85,9 +97,8 @@ public class ChatRoomService {
         }
 
         Optional<Message> lastMessage = messageRepository.findFirstByChatRoomIdOrderByCreatedAtDescIdDesc(roomId);
-        long unreadCount = myMembership.getLastReadMessageId() == null
-                ? messageRepository.countByChatRoomId(roomId)
-                : messageRepository.countByChatRoomIdAndIdGreaterThan(roomId, myMembership.getLastReadMessageId());
+        long unreadCount = messageRepository.countByChatRoomIdAndSenderIdNotAndIdGreaterThan(
+                roomId, self.getId(), myMembership.getLastReadMessageId() == null ? 0L : myMembership.getLastReadMessageId());
 
         return new ChatRoomListItemResponse(
                 roomId,
