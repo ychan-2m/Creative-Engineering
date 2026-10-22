@@ -2,6 +2,9 @@ package com.example.webtalk.message;
 
 import com.example.webtalk.chat.ChatRoomMemberId;
 import com.example.webtalk.chat.ChatRoomMemberRepository;
+import com.example.webtalk.chat.RoomChangedEvent;
+import com.example.webtalk.chat.ChatRoomRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import com.example.webtalk.common.ChatRoomForbiddenException;
 import com.example.webtalk.common.InvalidMessageException;
 import com.example.webtalk.message.dto.ChatSendRequest;
@@ -26,13 +29,17 @@ public class MessageService {
     private final MessageRepository messageRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher events;
+    private final ChatRoomRepository rooms;
 
     public MessageService(MessageRepository messageRepository,
                            ChatRoomMemberRepository chatRoomMemberRepository,
-                           UserRepository userRepository) {
+                           UserRepository userRepository, ApplicationEventPublisher events, ChatRoomRepository rooms) {
         this.messageRepository = messageRepository;
         this.chatRoomMemberRepository = chatRoomMemberRepository;
         this.userRepository = userRepository;
+        this.events = events;
+        this.rooms = rooms;
     }
 
     /**
@@ -64,19 +71,30 @@ public class MessageService {
         if (content.length() > MAX_CONTENT_LENGTH) {
             throw new InvalidMessageException("메시지는 " + MAX_CONTENT_LENGTH + "자 이하로 입력해 주세요.");
         }
-        if (request.clientMessageId() == null || request.clientMessageId().isBlank()) {
-            throw new InvalidMessageException("clientMessageId가 필요합니다.");
+        if (request.clientMessageId() == null || request.clientMessageId().isBlank()
+                || request.clientMessageId().length() > 36) {
+            throw new InvalidMessageException("clientMessageId는 1~36자로 입력해 주세요.");
         }
+
+        // 같은 방의 저장 순서와 커밋 순서를 맞추고, 동시 재전송도 한 번만 저장한다.
+        rooms.lockById(request.roomId()).orElseThrow(ChatRoomForbiddenException::new);
 
         // 5. 중복 요청이면 기존 메시지를 그대로 반환 (E09, T06, NFR03)
         var existing = messageRepository.findByClientMessageId(request.clientMessageId());
         if (existing.isPresent()) {
-            return toResponse(existing.get(), sender.getNickname());
+            Message previous = existing.get();
+            if (!previous.getSenderId().equals(sender.getId())
+                    || !previous.getChatRoomId().equals(request.roomId())
+                    || !previous.getContent().equals(content)) {
+                throw new InvalidMessageException("이미 사용한 clientMessageId입니다. 새 전송에는 다른 값을 사용해 주세요.");
+            }
+            return toResponse(previous, sender.getNickname());
         }
 
         // 6. 새 메시지 저장
         Message saved = messageRepository.save(
                 new Message(request.roomId(), sender.getId(), request.clientMessageId(), content));
+        events.publishEvent(new RoomChangedEvent(request.roomId(), chatRoomMemberRepository.findMemberLoginIds(request.roomId())));
         return toResponse(saved, sender.getNickname());
     }
 
@@ -85,14 +103,27 @@ public class MessageService {
      */
     @Transactional(readOnly = true)
     public List<MessageResponse> getHistory(String loginId, Long roomId) {
+        return getHistory(loginId, roomId, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MessageResponse> getHistory(String loginId, Long roomId, Long before, Long after) {
         User user = userRepository.findByLoginId(loginId)
                 .orElseThrow(ChatRoomForbiddenException::new);
         if (!chatRoomMemberRepository.existsById(new ChatRoomMemberId(roomId, user.getId()))) {
             throw new ChatRoomForbiddenException();
         }
 
-        List<Message> recentDesc = messageRepository
-                .findByChatRoomIdOrderByCreatedAtDescIdDesc(roomId, PageRequest.of(0, HISTORY_LIMIT));
+        if ((before != null && before <= 0) || (after != null && after < 0)
+                || (before != null && after != null)) {
+            throw new InvalidMessageException("before(양수) 또는 after(0 이상) 중 하나만 지정해 주세요.");
+        }
+        var page = PageRequest.of(0, HISTORY_LIMIT);
+        List<Message> recentDesc = after != null
+                ? messageRepository.findByChatRoomIdAndIdGreaterThanOrderByIdAsc(roomId, after, page)
+                : before != null
+                    ? messageRepository.findByChatRoomIdAndIdLessThanOrderByIdDesc(roomId, before, page)
+                    : messageRepository.findByChatRoomIdOrderByIdDesc(roomId, page);
 
         Map<Long, String> nicknameByUserId = userRepository
                 .findAllById(recentDesc.stream().map(Message::getSenderId).distinct().toList())
@@ -100,7 +131,7 @@ public class MessageService {
                 .collect(Collectors.toMap(User::getId, User::getNickname));
 
         List<Message> ascending = new java.util.ArrayList<>(recentDesc);
-        Collections.reverse(ascending);
+        if (after == null) Collections.reverse(ascending);
         return ascending.stream()
                 .map(m -> toResponse(m, nicknameByUserId.getOrDefault(m.getSenderId(), "알 수 없음")))
                 .toList();

@@ -18,11 +18,12 @@
 | `chat/ChatRoom.java`, `ChatRoomMember.java`, `ChatRoomMemberId.java` | 대화방·구성원과 방 ID/사용자 ID 복합 키 표현 |
 | `chat/ChatRoomRepository.java`, `ChatRoomMemberRepository.java` | 기존 1대1 방과 구성원 조회 |
 | `chat/ChatRoomService.java`, `ChatRoomController.java` | 기존 방 반환 또는 새 방 생성, 상대·최근 메시지·안 읽은 수 조회 |
+| `chat/RoomChangedEvent.java`, `RoomChangeNotifier.java` | DB 커밋 이후 개인 큐로 목록 변경 알림 발행 |
 | `message/Message.java`, `MessageRepository.java` | 메시지 저장과 최근 기록·요청 ID 조회 |
-| `message/MessageService.java` | 방 구성원 검사, 메시지 길이 검사, 중복 요청 조회, 저장과 최근 50개 기록 반환 |
+| `message/MessageService.java` | 방 구성원 검사, 메시지 길이 검사, 중복 요청 조회, 저장과 ID 커서 기반 50개 단위 기록 반환 |
 | `message/ChatMessageController.java` | 대화 기록 REST API |
 | `websocket/WebSocketConfig.java` | `/ws` 연결, 내장 메시지 브로커와 인터셉터 설정 |
-| `websocket/WebSocketAuthInterceptor.java` | CONNECT 인증 여부 및 `/topic/chat/{roomId}` SUBSCRIBE 구성원 검사 |
+| `websocket/WebSocketAuthInterceptor.java` | CONNECT 인증, SEND 목적지 제한, SUBSCRIBE 허용 목록과 구성원 검사 |
 | `websocket/ChatWebSocketController.java` | 메시지 저장 후 방 토픽에 발행, 개인 오류 큐로 오류 전달 |
 | 각 기능의 `dto/` | 요청·응답 구조 정의, 일부 요청의 Bean Validation 규칙 선언 |
 | `common/` | 공통 오류 응답과 예외를 HTTP 상태 코드로 변환 |
@@ -44,8 +45,8 @@
 
 메시지 내용과 사용자 이름은 `textContent`로 표시합니다.
 재시도는 같은 `clientMessageId`를 사용하고, 서버는 해당 ID로 이미 저장된 메시지를 찾아 반환합니다.
-DB에도 해당 값의 UNIQUE 제약이 있습니다. 동시에 들어오는 중복 요청의 오류 처리와
-기존 메시지의 발신자·방 일치 검증은 추가 보완이 필요합니다.
+DB에도 해당 값의 UNIQUE 제약이 있습니다. 같은 ID의 재전송은 발신자·방·내용이 모두 일치해야 합니다.
+같은 방의 저장은 방 행 잠금으로 직렬화하며, 같은 상대와의 동시 방 생성은 두 사용자 중 작은 ID의 사용자 행을 잠근 뒤 기존 방을 조회합니다.
 
 ## REST API
 
@@ -60,7 +61,10 @@ DB에도 해당 값의 UNIQUE 제약이 있습니다. 동시에 들어오는 중
 | GET | `/api/users?query=검색어` | 사용자 검색 |
 | POST | `/api/chat-rooms/direct` | 1대1 방 조회·생성: `targetUserId` |
 | GET | `/api/chat-rooms` | 참여한 방 목록 |
-| GET | `/api/chat-rooms/{roomId}/messages` | 최근 메시지 최대 50개 |
+| GET | `/api/chat-rooms/{roomId}/messages` | 최근 메시지 최대 50개, ID 오름차순 반환 |
+| GET | `/api/chat-rooms/{roomId}/messages?before={id}` | 해당 ID 이전 최대 50개, ID 오름차순 |
+| GET | `/api/chat-rooms/{roomId}/messages?after={id}` | 해당 ID 이후 첫 50개, ID 오름차순. 재연결 시 마지막 ID로 반복 조회 |
+| POST | `/api/chat-rooms/{roomId}/read` | `{messageId}`까지 읽음 처리 |
 
 ## WebSocket 메시지
 
@@ -70,6 +74,11 @@ DB에도 해당 값의 UNIQUE 제약이 있습니다. 동시에 들어오는 중
 | 클라이언트 전송 | `/app/chat.send` |
 | 방 메시지 구독 | `/topic/chat/{roomId}` |
 | 개인 오류 구독 | `/user/queue/errors` |
+| 개인 목록 변경 구독 | `/user/queue/rooms` |
+
+목록 알림은 `{roomId}`만 포함하며 DB 커밋 뒤 구성원 각자의 개인 큐로 전달합니다.
+클라이언트는 목록을 재조회합니다. 수신자는 원래 트랜잭션에서 확정하여 커밋 콜백이 추가 DB 연결을 점유하지 않습니다.
+허용된 개인 큐와 구성원인 방의 정확한 경로만 구독할 수 있습니다. 와일드카드 구독과 브로커 직접 SEND는 차단합니다.
 
 전송 본문 예시:
 
@@ -125,10 +134,16 @@ MySQL 등으로 전환하려면 JDBC 드라이버, 접속 설정과 SQL 문법�
 
 ## 2026-10-11 업그레이드
 
-- 대화 목록의 숫자는 상대방이 보낸 안 읽은 메시지만 포함합니다. 대화방을 열면 읽음 처리하고 목록은 약 3초마다 갱신합니다.
-- 재연결과 탭 복귀 시 최근 대화 기록을 재조회하고 요청 ID로 기존 말풍선과 중복을 제거합니다.
+- 대화 목록의 숫자는 상대방이 보낸 안 읽은 메시지만 포함합니다. 대화방을 열면 읽음 처리합니다. 목록 갱신은 10월 22일 개선에서 실시간 알림과 15초 보완 조회로 변경했습니다.
+- 재연결과 탭 복귀 시 대화 기록을 재조회합니다. 10월 22일 개선에서 ID 커서로 누락분 전체를 복구하고 서버 ID로 중복 제거·정렬하도록 변경했습니다.
 - `reply_style_relationship_profiles`에 친구·어른·선배/동료·후배·처음 만난 사람의 질문지를 각각 저장합니다. 이전 질문지는 해당 관계에 보존합니다.
 - 접속 주소와 같은 Origin의 WebSocket을 허용하고, 외부 접속용 서버 바인딩과 HTTPS 프록시 전달 헤더 처리를 설정했습니다. H2 콘솔은 기본으로 비활성화합니다.
 - 자동 테스트에 안 읽은 수, 읽음 권한 및 ID 역행 방지, 관계별 저장·이전 답변 보존·추천 컨텍스트, 공용 주소를 가정한 WebSocket 연결 검증을 추가했습니다.
 
 외부 접속 절차와 현재 배포 범위는 [외부 접속 안내](REMOTE_ACCESS.md)를 참고하세요.
+
+## 2026-10-22 개선과 검증
+
+기록 페이지 조회·재연결·실시간 목록·동시 요청·권한 검사·모바일 입력 개선과 재현 방법은 [개선 기록](UPGRADE_2026-10-22.md)을 참고하세요.
+
+추가 점검에서 초안과 미확인 메시지를 방별로 복원하도록 했습니다. 최신 메시지 위치에 도달한 경우에만 읽음 처리하며, 위쪽 대화를 읽을 때는 새 메시지 안내를 표시합니다. [재현 및 결과](RECHECK_2026-10-22.md)를 참고하세요.

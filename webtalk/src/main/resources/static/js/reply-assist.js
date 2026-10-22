@@ -119,6 +119,9 @@ window.WebTalkReplyAssist = (() => {
     loadSurvey();
   });
   document.getElementById('closeStyleButton').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => {
+    if (loadedRelationship && !editing) drafts.set(loadedRelationship, captureSurvey());
+  });
   form.addEventListener('submit', async event => {
     event.preventDefault(); if (editing || !loadedRelationship) return;
     const answers = Array.from(fields.querySelectorAll('textarea'), el => el.value.trim());

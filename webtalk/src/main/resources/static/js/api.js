@@ -24,6 +24,11 @@ window.WebTalkApi = (() => {
     const isJson = (response.headers.get('content-type') || '').includes('application/json');
     const body = isJson ? await response.json().catch(() => null) : null;
 
+    if (response.status === 401 && location.pathname === '/chat.html') {
+      window.WebTalkSocket?.disconnect();
+      location.replace('/login.html?expired=1');
+    }
+
     if (!response.ok) {
       const code = body && body.code ? body.code : 'UNKNOWN_ERROR';
       const message = body && body.message ? body.message : '요청을 처리하지 못했습니다.';

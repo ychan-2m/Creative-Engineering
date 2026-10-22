@@ -11,14 +11,19 @@ window.WebTalkSocket = (() => {
   let roomMessageHandler = null;
   let roomSubscription = null;
   let errorSubscription = null;
+  let roomsSubscription = null;
+  let subscriptionRevision = 0;
 
   let onStatusChange = () => {};
   let onRoomError = () => {};
+  let onRoomsChanged = () => {};
+  let onRoomReady = () => {};
 
   function buildClient() {
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     return new StompJs.Client({
       brokerURL: `${protocol}://${location.host}/ws`,
+      connectionTimeout: 10000,
       reconnectDelay: 0, // 자동 재연결 대신 아래에서 직접 간격을 관리한다.
       onConnect: handleConnect,
       onWebSocketClose: handleClose,
@@ -30,7 +35,9 @@ window.WebTalkSocket = (() => {
 
   function handleConnect() {
     reconnectAttempt = 0;
-    onStatusChange('connected');
+    roomSubscription = null;
+    errorSubscription = null;
+    roomsSubscription = null;
 
     errorSubscription = client.subscribe('/user/queue/errors', (message) => {
       try {
@@ -40,12 +47,19 @@ window.WebTalkSocket = (() => {
       }
     });
 
+    roomsSubscription = client.subscribe('/user/queue/rooms', () => onRoomsChanged());
     if (currentRoomId != null && roomMessageHandler) {
       subscribeRoomInternal(currentRoomId, roomMessageHandler);
     }
+    onStatusChange('connected');
   }
 
   function handleClose() {
+    subscriptionRevision++;
+    roomSubscription = null;
+    errorSubscription = null;
+    roomsSubscription = null;
+    clearTimeout(reconnectTimer);
     if (manualDisconnect) {
       return;
     }
@@ -59,9 +73,19 @@ window.WebTalkSocket = (() => {
     reconnectAttempt += 1;
     reconnectTimer = setTimeout(() => {
       if (!manualDisconnect) {
-        client.activate();
+        reconnectTimer = null;
+        restartClient();
       }
     }, delay);
+  }
+
+  async function restartClient() {
+    const target = client;
+    if (!target) return;
+    // reconnectDelay=0일 때 닫힌 소켓의 Client는 ACTIVE 상태로 남을 수 있다.
+    // activate()가 무시되지 않도록 먼저 INACTIVE 상태로 전환한다.
+    await target.deactivate();
+    if (!manualDisconnect && target === client) target.activate();
   }
 
   function subscribeRoomInternal(roomId, onMessage) {
@@ -69,14 +93,21 @@ window.WebTalkSocket = (() => {
       roomSubscription.unsubscribe();
       roomSubscription = null;
     }
-    roomSubscription = client.subscribe(`/topic/chat/${roomId}`, (message) => {
-      onMessage(JSON.parse(message.body));
+    const revision = ++subscriptionRevision;
+    const receipt = `room-${revision}`;
+    client.watchForReceipt(receipt, () => {
+      if (revision === subscriptionRevision && currentRoomId === roomId) onRoomReady();
     });
+    roomSubscription = client.subscribe(`/topic/chat/${roomId}`, (message) => {
+      if (revision === subscriptionRevision && currentRoomId === roomId) onMessage(JSON.parse(message.body));
+    }, { receipt });
   }
 
   function connect(handlers) {
     onStatusChange = handlers.onStatusChange || onStatusChange;
     onRoomError = handlers.onRoomError || onRoomError;
+    onRoomsChanged = handlers.onRoomsChanged || onRoomsChanged;
+    onRoomReady = handlers.onRoomReady || onRoomReady;
 
     manualDisconnect = false;
     reconnectAttempt = 0;
@@ -99,15 +130,17 @@ window.WebTalkSocket = (() => {
     roomMessageHandler = null;
     roomSubscription = null;
     errorSubscription = null;
+    roomsSubscription = null;
+    subscriptionRevision++;
   }
 
   function retryNow() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     reconnectAttempt = 0;
     manualDisconnect = false;
     onStatusChange('connecting');
-    if (client) {
-      client.activate();
-    }
+    restartClient();
   }
 
   function subscribeRoom(roomId, onMessage) {
@@ -118,20 +151,33 @@ window.WebTalkSocket = (() => {
     }
   }
 
+  function unsubscribeRoom() {
+    subscriptionRevision++;
+    if (client?.connected && roomSubscription) roomSubscription.unsubscribe();
+    roomSubscription = null;
+    currentRoomId = null;
+    roomMessageHandler = null;
+  }
+
   function publish(roomId, clientMessageId, content) {
     if (!client || !client.connected) {
       return false;
     }
-    client.publish({
-      destination: '/app/chat.send',
-      body: JSON.stringify({ roomId, clientMessageId, content }),
-    });
-    return true;
+    try {
+      client.publish({
+        destination: '/app/chat.send',
+        body: JSON.stringify({ roomId, clientMessageId, content }),
+      });
+      return true;
+    } catch (error) {
+      console.error('메시지 전송 실패', error);
+      return false;
+    }
   }
 
   function isConnected() {
     return !!(client && client.connected);
   }
 
-  return { connect, disconnect, subscribeRoom, publish, isConnected, retryNow };
+  return { connect, disconnect, subscribeRoom, unsubscribeRoom, publish, isConnected, retryNow };
 })();

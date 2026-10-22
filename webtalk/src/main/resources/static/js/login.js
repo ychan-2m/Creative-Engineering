@@ -14,6 +14,10 @@
     errorBanner.hidden = true;
   }
 
+  if (new URLSearchParams(location.search).has('expired')) {
+    showError('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     hideError();

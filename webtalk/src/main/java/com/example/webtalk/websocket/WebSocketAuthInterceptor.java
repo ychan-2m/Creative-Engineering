@@ -52,6 +52,11 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
         Principal principal = accessor.getUser();
 
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            // 브로커 목적지에 직접 보내면 저장/권한 검사를 우회할 수 있다.
+            return principal != null && "/app/chat.send".equals(accessor.getDestination()) ? message : null;
+        }
+
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
             // /ws 엔드포인트 자체가 인증을 요구하므로(SecurityConfig) 원칙적으로 principal이 없을 수 없지만,
             // 방어적으로 한 번 더 막는다.
@@ -63,11 +68,11 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
         if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
             String destination = accessor.getDestination();
-            if (destination == null || !destination.startsWith(ROOM_TOPIC_PREFIX)) {
-                return message; // 개인 오류 큐 등 다른 구독은 그대로 통과시킨다.
-            }
             if (principal == null) {
                 return null;
+            }
+            if ("/user/queue/errors".equals(destination) || "/user/queue/rooms".equals(destination)) {
+                return message;
             }
 
             Long roomId = parseRoomId(destination);
@@ -89,6 +94,8 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
     }
 
     private Long parseRoomId(String destination) {
+        // /topic/**, /topic/chat/*와 /queue/** 등 와일드카드 구독도 차단한다.
+        if (destination == null || !destination.matches("/topic/chat/[1-9][0-9]*")) return null;
         try {
             return Long.parseLong(destination.substring(ROOM_TOPIC_PREFIX.length()));
         } catch (NumberFormatException ex) {

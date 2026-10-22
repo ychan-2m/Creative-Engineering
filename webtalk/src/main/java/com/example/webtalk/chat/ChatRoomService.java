@@ -11,6 +11,7 @@ import com.example.webtalk.message.MessageRepository;
 import com.example.webtalk.user.User;
 import com.example.webtalk.user.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -26,15 +27,17 @@ public class ChatRoomService {
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final UserRepository userRepository;
     private final MessageRepository messageRepository;
+    private final ApplicationEventPublisher events;
 
     public ChatRoomService(ChatRoomRepository chatRoomRepository,
                             ChatRoomMemberRepository chatRoomMemberRepository,
                             UserRepository userRepository,
-                            MessageRepository messageRepository) {
+                            MessageRepository messageRepository, ApplicationEventPublisher events) {
         this.chatRoomRepository = chatRoomRepository;
         this.chatRoomMemberRepository = chatRoomMemberRepository;
         this.userRepository = userRepository;
         this.messageRepository = messageRepository;
+        this.events = events;
     }
 
     @Transactional
@@ -48,6 +51,8 @@ public class ChatRoomService {
         User target = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new UserNotFoundException("대화 상대를 찾을 수 없습니다: id=" + targetUserId));
 
+        // 양쪽 사용자가 동시에 요청해도 같은 쌍은 작은 ID의 사용자 행을 먼저 잠근다.
+        userRepository.lockById(Math.min(self.getId(), target.getId())).orElseThrow(ChatRoomForbiddenException::new);
         Optional<Long> existingRoomId = chatRoomMemberRepository.findDirectRoomId(self.getId(), target.getId());
         if (existingRoomId.isPresent()) {
             return new ChatRoomResponse(existingRoomId.get(), PeerSummary.from(target), false);
@@ -56,6 +61,7 @@ public class ChatRoomService {
         ChatRoom room = chatRoomRepository.save(new ChatRoom(ChatRoom.ROOM_TYPE_DIRECT));
         chatRoomMemberRepository.save(new ChatRoomMember(room, self));
         chatRoomMemberRepository.save(new ChatRoomMember(room, target));
+        events.publishEvent(new RoomChangedEvent(room.getId(), List.of(self.getLoginId(), target.getLoginId())));
 
         return new ChatRoomResponse(room.getId(), PeerSummary.from(target), true);
     }
@@ -70,6 +76,8 @@ public class ChatRoomService {
         return myMemberships.stream()
                 .map(membership -> toListItem(self, membership))
                 .filter(java.util.Objects::nonNull)
+                .sorted(java.util.Comparator.comparing(ChatRoomListItemResponse::lastMessageAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
                 .toList();
     }
 
@@ -81,7 +89,9 @@ public class ChatRoomService {
         Message message = messageRepository.findById(messageId)
                 .filter(m -> m.getChatRoomId().equals(roomId))
                 .orElseThrow(() -> new InvalidMessageException("이 대화방의 메시지만 읽음 처리할 수 있습니다."));
-        chatRoomMemberRepository.advanceRead(roomId, self.getId(), message.getId());
+        if (chatRoomMemberRepository.advanceRead(roomId, self.getId(), message.getId()) > 0) {
+            events.publishEvent(new RoomChangedEvent(roomId, chatRoomMemberRepository.findMemberLoginIds(roomId)));
+        }
     }
 
     private ChatRoomListItemResponse toListItem(User self, ChatRoomMember myMembership) {

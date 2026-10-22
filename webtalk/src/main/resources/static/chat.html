@@ -42,6 +42,11 @@
           <span id="connectionStatus" class="connection-status status-connecting">연결 중</span>
         </div>
 
+        <div class="history-controls">
+          <button id="olderButton" type="button" hidden>이전 메시지 불러오기</button>
+          <button id="latestMessagesButton" type="button" hidden>새 메시지 · 최신으로 이동</button>
+          <span id="historyStatus" role="status"></span>
+        </div>
         <div id="messageList" class="message-list" aria-live="polite"></div>
 
         <div class="reply-assist">

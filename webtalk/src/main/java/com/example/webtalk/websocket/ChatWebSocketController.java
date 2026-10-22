@@ -12,6 +12,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * STOMP /app/chat.send 처리 (5.6, 6.4). 저장은 MessageService의 트랜잭션 안에서 끝내고,
@@ -19,6 +21,7 @@ import java.security.Principal;
  */
 @Controller
 public class ChatWebSocketController {
+    private static final Logger log = LoggerFactory.getLogger(ChatWebSocketController.class);
 
     private final MessageService messageService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -39,6 +42,7 @@ public class ChatWebSocketController {
             sendError(principal, "INVALID_MESSAGE", ex.getMessage());
         } catch (RuntimeException ex) {
             // 내부 원인은 서버 로그로만 남기고, 클라이언트에는 일반화된 안내만 전달한다 (6.6 "오류에 내부 정보 노출 금지").
+            log.warn("메시지 전송 실패: roomId={}", request.roomId(), ex);
             sendError(principal, "SEND_FAILED", "메시지를 전송하지 못했습니다.");
         }
     }

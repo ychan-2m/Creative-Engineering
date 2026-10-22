@@ -25,10 +25,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.enableSimpleBroker("/topic", "/queue");
         registry.setApplicationDestinationPrefixes("/app");
         registry.setUserDestinationPrefix("/user");
+        registry.setPreservePublishOrder(true);
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.setPreserveReceiveOrder(true);
         // 기본 동일 출처 검사: 접속한 서버의 도메인/IP와 같은 Origin만 허용한다.
         registry.addEndpoint("/ws");
     }

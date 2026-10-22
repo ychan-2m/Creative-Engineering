@@ -495,3 +495,29 @@ a {
 
 #chatRoomView[hidden] { display: none !important; }
 .reply-assist select { max-width: 100%; margin: 4px 8px 4px 0; }
+
+/* 작은 화면과 모바일 브라우저의 가변 높이에 맞춘다. */
+[hidden] { display: none !important; }
+.chat-page { height: 100dvh; }
+.top-bar { flex-shrink: 0; gap: 8px; flex-wrap: wrap; }
+.top-bar > div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.current-user, .peer-name { overflow-wrap: anywhere; }
+.search-row input, .composer textarea { min-width: 0; }
+.message-list { min-height: 0; overflow-anchor: none; }
+.bubble-row { flex-shrink: 0; }
+.bubble .content { white-space: pre-wrap; }
+.history-controls { padding: 6px 14px; text-align: center; font-size: .82rem; color: #526075; }
+.history-controls button { cursor: pointer; padding: 5px 12px; }
+.chat-header { gap: 8px; }
+.chat-header > div { min-width: 0; }
+.connection-status { flex-shrink: 0; }
+@media (max-width: 720px) {
+  .chat-header .back-button { display: inline-block; }
+  .top-bar { padding: 8px 12px; }
+  .reply-assist { padding: 8px 12px; max-height: 32dvh; overflow-y: auto; }
+  .reply-assist small, .composer-hint { font-size: .7rem; }
+  .bubble { max-width: 88%; }
+  .composer { padding: 8px; }
+  .composer textarea, .search-row input { font-size: 16px; }
+  #styleDialog { padding: 16px; }
+}

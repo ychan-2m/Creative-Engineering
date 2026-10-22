@@ -6,6 +6,8 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * 모든 REST 오류를 부록 B의 {code, message} 형식으로 통일하고,
@@ -52,6 +54,12 @@ public class GlobalExceptionHandler {
                 .orElse("입력값을 확인해 주세요.");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse("VALIDATION_ERROR", message));
+    }
+
+    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<ErrorResponse> handleMalformedRequest(Exception ex) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("VALIDATION_ERROR", "요청 형식과 입력값을 확인해 주세요."));
     }
 
     @ExceptionHandler(Exception.class)

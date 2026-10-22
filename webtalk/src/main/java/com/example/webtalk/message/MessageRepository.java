@@ -14,6 +14,12 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     // FR07 대화 기록 조회: 최근 메시지부터 가져온 뒤 서비스에서 시간순으로 뒤집는다.
     List<Message> findByChatRoomIdOrderByCreatedAtDescIdDesc(Long chatRoomId, Pageable pageable);
 
+    List<Message> findByChatRoomIdOrderByIdDesc(Long chatRoomId, Pageable pageable);
+
+    List<Message> findByChatRoomIdAndIdLessThanOrderByIdDesc(Long chatRoomId, Long before, Pageable pageable);
+
+    List<Message> findByChatRoomIdAndIdGreaterThanOrderByIdAsc(Long chatRoomId, Long after, Pageable pageable);
+
     long countByChatRoomIdAndIdGreaterThan(Long chatRoomId, Long messageId);
 
     List<Message> findByChatRoomIdAndIdLessThanEqualOrderByIdDesc(Long chatRoomId, Long id, Pageable pageable);
